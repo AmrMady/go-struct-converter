@@ -14,16 +14,12 @@ func convertValue(source reflect.Value, targetType reflect.Type) (reflect.Value,
 		return convertSlice(source, targetType)
 	case reflect.Map:
 		return convertMap(source, targetType)
-	// Add cases for other complex types as necessary
 	default:
-		// Fallback for basic types and direct assignments
 		if source.Type().AssignableTo(targetType) {
 			return source, nil
 		}
-		// Custom basic type conversions (e.g., int to float64) can be added here
 	}
 
-	// If no suitable conversion found
 	return reflect.Value{}, errors.New("incompatible types or unsupported conversion")
 }
 
@@ -33,14 +29,14 @@ func convertStruct(source reflect.Value, targetType reflect.Type) (reflect.Value
 	for i := 0; i < source.NumField(); i++ {
 		sourceField := source.Field(i)
 		if !sourceField.CanInterface() {
-			continue // Skip unexported fields
+			continue
 		}
 		targetFieldName := source.Type().Field(i).Name
 		targetField := target.FieldByName(targetFieldName)
 		if targetField.IsValid() && targetField.CanSet() {
 			convertedValue, err := convertValue(sourceField, targetField.Type())
 			if err != nil {
-				continue // Optionally, handle or log the error
+				return reflect.Value{}, err
 			}
 			targetField.Set(convertedValue)
 		}
@@ -58,7 +54,7 @@ func convertSlice(source reflect.Value, targetType reflect.Type) (reflect.Value,
 	for i := 0; i < source.Len(); i++ {
 		convertedValue, err := convertValue(source.Index(i), elemType)
 		if err != nil {
-			continue // Optionally, handle or log the error
+			return reflect.Value{}, err
 		}
 		targetSlice.Index(i).Set(convertedValue)
 	}
@@ -73,11 +69,15 @@ func convertMap(source reflect.Value, targetType reflect.Type) (reflect.Value, e
 	targetMap := reflect.MakeMapWithSize(targetType, source.Len())
 	for _, key := range source.MapKeys() {
 		sourceValue := source.MapIndex(key)
-		convertedKey, keyErr := convertValue(key, targetType.Key())
-		convertedValue, valueErr := convertValue(sourceValue, targetType.Elem())
-		if keyErr == nil && valueErr == nil {
-			targetMap.SetMapIndex(convertedKey, convertedValue)
+		convertedKey, err := convertValue(key, targetType.Key())
+		if err != nil {
+			return reflect.Value{}, err
 		}
+		convertedValue, err := convertValue(sourceValue, targetType.Elem())
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		targetMap.SetMapIndex(convertedKey, convertedValue)
 	}
 	return targetMap, nil
 }
@@ -96,28 +96,22 @@ func ConvertStructs[Source any, Target any](source *Source, target *Target, tagN
 		sourceField := sourceVal.Field(i)
 		sourceTypeField := sourceVal.Type().Field(i)
 		tagValue := sourceTypeField.Tag.Get(tagName)
-		if !sourceField.CanInterface() || tagValue == "" { // Skip unexported fields
+		if !sourceField.CanInterface() || tagValue == "" {
 			continue
 		}
 
 		var targetField reflect.Value
 		if tagName != "" {
-			// Use struct tag to determine the target field name
 			tagValue = sourceTypeField.Tag.Get(tagName)
-			//value, ok := sourceTypeField.Tag.Lookup(tagName)
-			//fmt.Println("sourceTypeField.Tag.Lookup(tagName) value: ", value, ", ok: ", ok)
-			//fmt.Println("tagValue: ", tagValue)
-			//fmt.Println("targetVal.FieldByName(tagValue): ", targetVal.FieldByName(tagValue))
 			if tagValue != "" {
 				targetField = targetVal.FieldByName(tagValue)
 			}
-			// If targetField is still invalid, try using the field name
 			if !targetField.IsValid() || !targetField.CanSet() {
 				targetField = targetVal.FieldByName(sourceTypeField.Name)
 			}
 
 			if !targetField.IsValid() || !targetField.CanSet() {
-				continue // No corresponding field in the target or it's unexported
+				continue
 			}
 		} else {
 			// Fallback to using the source field name if no tag is specified or the tag is empty
@@ -130,7 +124,7 @@ func ConvertStructs[Source any, Target any](source *Source, target *Target, tagN
 
 		convertedValue, err := convertValue(sourceField, targetField.Type())
 		if err != nil {
-			continue // Optionally log the error or handle it as needed
+			return err
 		}
 
 		targetField.Set(convertedValue)
