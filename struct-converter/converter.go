@@ -254,7 +254,7 @@ func ConvertStructs[Source any, Target any](source *Source, target *Target, tagN
 		sourceField := sourceVal.Field(i)
 		sourceTypeField := sourceVal.Type().Field(i)
 		tagValue := sourceTypeField.Tag.Get(tagName)
-		if !sourceField.CanInterface() || tagValue == "" {
+		if !sourceField.CanInterface() {
 			continue
 		}
 
